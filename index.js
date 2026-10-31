@@ -29,14 +29,14 @@ const db = mongoClient.db("booknook");
 const booksCollection = db.collection("books");
 
 
-const verifyToken = async (req,res)=> {
+const verifyToken = async (req, res) => {
   const authHeader = req.headers.authorization;
-  if(!authHeader){
+  if (!authHeader) {
     return res.status(401).send({ msg: "Unauthorized! No data for you." });
   }
 
   const token = authHeader.split(" ")[1];
-  if(!token){
+  if (!token) {
     return res.status(401).send({ msg: "Unauthorized! No data for you." });
   }
 
@@ -45,7 +45,7 @@ const verifyToken = async (req,res)=> {
     new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
   );
 
-  try { 
+  try {
     const { payload } = await jwtVerify(token, JWKS);
     next();
   } catch (error) {
@@ -56,11 +56,24 @@ const verifyToken = async (req,res)=> {
 
 
 // add-book
-app.post('/add-book', verifyToken, async (req,res) => {
+app.post("/add-book", verifyToken, async (req, res) => {
   const data = req.body;
   const result = await booksCollection.insertOne(data);
   console.log(result)
   res.send(result);
+})
+
+
+// get all books (public route)
+app.get("/books", async (req, res) => {
+
+  try {
+    const books = await booksCollection.find().toArray();
+    res.status(200).send(books);
+  } catch (error) {
+    console.error("Error fetching books:", error);
+    res.status(500).send({ message: "Failed to fetch books" });
+  }
 })
 
 
