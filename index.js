@@ -8,7 +8,6 @@ const app = express();
 const PORT = 8000;
 
 
-
 const client = new MongoClient(process.env.MONGODB_URI);
 
 export async function connectToMongoDB() {
@@ -41,6 +40,7 @@ const verifyToken = async (req,res)=> {
     return res.status(401).send({ msg: "Unauthorized! No data for you." });
   }
 
+  
   const JWKS = createRemoteJWKSet(
     new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
   );
