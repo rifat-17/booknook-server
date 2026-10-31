@@ -158,6 +158,28 @@ app.get("/books/:id", verifyToken, async (req, res) => {
 })
 
 
+// Get books added by the logged-in user
+app.get("/my-books", verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.sub;
+
+    const myBooks = await booksCollection.find({
+      "addedBy,userId": userId,
+    }).toArray();
+
+    res.status(200).json(myBooks);
+
+  } catch (error) {
+    console.error("Error fetching my books:", error);
+
+    res.status(500).json({
+      message: "Failed to fetch your books.",
+    });
+
+  }
+})
+
+
 app.get("/", (req, res) => {
   res.send({ message: "Server is running fine!" });
 });
