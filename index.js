@@ -2,6 +2,7 @@ import express from "express";
 import { MongoClient } from 'mongodb';
 import "dotenv/config";
 import cors from "cors";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const app = express();
 const PORT = 8000;
@@ -29,8 +30,33 @@ const db = mongoClient.db("booknook");
 const booksCollection = db.collection("books");
 
 
+const verifyToken = async (req,res)=> {
+  const authHeader = req.headers.authorization;
+  if(!authHeader){
+    return res.status(401).send({ msg: "Unauthorized! No data for you." });
+  }
+
+  const token = authHeader.split(" ")[1];
+  if(!token){
+    return res.status(401).send({ msg: "Unauthorized! No data for you." });
+  }
+
+  const JWKS = createRemoteJWKSet(
+    new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
+  );
+
+  try { 
+    const { payload } = await jwtVerify(token, JWKS);
+    next();
+  } catch (error) {
+    return res.status(500).send({ message: "Server Error!" });
+  }
+
+}
+
+
 // add-book
-app.post('/add-book', async (req,res) => {
+app.post('/add-book', verifyToken, async (req,res) => {
   const data = req.body;
   const result = await booksCollection.insertOne(data);
   console.log(result)
