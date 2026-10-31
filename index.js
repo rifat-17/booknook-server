@@ -1,5 +1,5 @@
 import express from "express";
-import { MongoClient } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 import "dotenv/config";
 import cors from "cors";
 import { createRemoteJWKSet, jwtVerify } from "jose";
@@ -37,7 +37,7 @@ const verifyToken = async (req, res, next) => {
 
   const token = authHeader.split(" ")[1];
   if (!token) {
-    return res.status(401).send({ msg: "Unauthorized! No data for you." });
+    return res.status(401).send({ message: "Unauthorized! No data for you." });
   }
 
 
@@ -56,7 +56,7 @@ const verifyToken = async (req, res, next) => {
 }
 
 
-// add-book
+// add-book (private)
 app.post("/add-book", verifyToken, async (req, res) => {
   try {
     const { title, author, category, description, imageUrl } = req.body;
@@ -81,6 +81,8 @@ app.post("/add-book", verifyToken, async (req, res) => {
       imageUrl: imageUrl.trim(),
       addedBy: {
         userId: req.user.sub,
+        name: req.user.name || "BookNook Member",
+        email: req.user.email || "",
       },
       createdAt: new Date(),
     };
@@ -117,6 +119,41 @@ app.get("/books", async (req, res) => {
   } catch (error) {
     console.error("Error fetching books:", error);
     res.status(500).send({ message: "Failed to fetch books" });
+  }
+})
+
+
+//book details (private)
+app.get("/books/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check whether the ID is a valid MongoDB ObjectId
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: "Invalid book ID.",
+      });
+    }
+    // Find the book in MongoDB
+    const book = await booksCollection.findOne({
+      _id: new ObjectId(id),
+    });
+
+    // If the book doesn't exist
+    if (!book) {
+      return res.status(404).json({
+        message: "Book not found.",
+      });
+    }
+
+    res.status(200).json(book);
+
+  } catch (error) {
+    console.error("Error fetching book:", error);
+
+    res.status(500).json({
+      message: "Failed to fetch book.",
+    });
   }
 })
 
