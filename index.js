@@ -40,7 +40,7 @@ const verifyToken = async (req,res)=> {
     return res.status(401).send({ msg: "Unauthorized! No data for you." });
   }
 
-  
+
   const JWKS = createRemoteJWKSet(
     new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
   );
@@ -72,3 +72,5 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server is running at ${PORT}`);
 });
+
+export default app
