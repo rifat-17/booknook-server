@@ -23,7 +23,19 @@ export async function connectToMongoDB() {
 app.use(cors());
 app.use(express.json());
 
-connectToMongoDB();
+
+const mongoClient = await connectToMongoDB();
+const db = mongoClient.db("booknook");
+const booksCollection = db.collection("books");
+
+
+// add-book
+app.post('/add-book', async (req,res) => {
+  const data = req.body;
+  const result = await booksCollection.insertOne(data);
+  console.log(result)
+  res.send(result);
+})
 
 
 app.get("/", (req, res) => {
