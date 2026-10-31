@@ -29,7 +29,7 @@ const db = mongoClient.db("booknook");
 const booksCollection = db.collection("books");
 
 
-const verifyToken = async (req, res) => {
+const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     return res.status(401).send({ msg: "Unauthorized! No data for you." });
@@ -47,6 +47,7 @@ const verifyToken = async (req, res) => {
 
   try {
     const { payload } = await jwtVerify(token, JWKS);
+    req.user = payload;
     next();
   } catch (error) {
     return res.status(500).send({ message: "Server Error!" });
@@ -57,10 +58,53 @@ const verifyToken = async (req, res) => {
 
 // add-book
 app.post("/add-book", verifyToken, async (req, res) => {
-  const data = req.body;
-  const result = await booksCollection.insertOne(data);
-  console.log(result)
-  res.send(result);
+  try {
+    const { title, author, category, description, imageUrl } = req.body;
+
+    if (
+      !title?.trim() ||
+      !author?.trim() ||
+      !category ||
+      !description?.trim() ||
+      !imageUrl?.trim()
+    ) {
+      return res.status(400).json({
+        message: "All book fields are required.",
+      });
+    }
+
+    const newBook = {
+      title: title.trim(),
+      author: author.trim(),
+      category,
+      description: description.trim(),
+      imageUrl: imageUrl.trim(),
+      addedBy: {
+        userId: req.user.sub,
+      },
+      createdAt: new Date(),
+    };
+
+    if (!newBook.addedBy.userId) {
+      return res.status(401).json({
+        message: "User identity not found in token.",
+      });
+    }
+
+    const result = await booksCollection.insertOne(newBook);
+
+    res.status(201).json({
+      success: true,
+      message: "Book added successfully!",
+      insertedId: result.insertedId,
+    });
+  } catch (error) {
+    console.error("Add book error:", error);
+
+    res.status(500).json({
+      message: "Failed to add book.",
+    });
+  }
 })
 
 
