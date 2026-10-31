@@ -180,6 +180,119 @@ app.get("/my-books", verifyToken, async (req, res) => {
 })
 
 
+// Update a book (protected route)
+app.patch("/books/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.sub;
+
+    const { title, author, category, description, imageUrl } = req.body;
+
+    // Validate book ID
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: "Invalid book ID.",
+      });
+    }
+
+    // Validate required fields
+    if (
+      !title?.trim() ||
+      !author?.trim() ||
+      !category ||
+      !description?.trim() ||
+      !imageUrl?.trim()
+    ) {
+      return res.status(400).json({
+        message: "All book fields are required.",
+      });
+    }
+
+    // Update only the owner's book
+    const result = await booksCollection.updateOne(
+      {
+        _id: new ObjectId(id),
+        "addedBy.userId": userId,
+      },
+      {
+        $set: {
+          title: title.trim(),
+          author: author.trim(),
+          category,
+          description: description.trim(),
+          imageUrl: imageUrl.trim(),
+          updatedAt: new Date(),
+
+        },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({
+        message: "Book not found or you are not authorized to update it.",
+      });
+    }
+
+    //getting an error?  uncomment it. and check
+    // res.status(200).json({
+    //   success: true,
+    //   message: "Book deleted successfully!",
+    // });
+    res.status(200).json(result)
+
+  } catch (error) {
+    console.error("Update book error:", error);
+
+    res.status(500).json({
+      message: "Failed to update book.",
+    });
+
+  }
+})
+
+
+// Delete a book (protected route)
+app.delete("/books/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.sub;
+
+     // Validate book ID
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: "Invalid book ID.",
+      });
+    }
+
+    const result = await booksCollection.deleteOne({
+      _id: new ObjectId(id),
+      "addedBy.userId": userId,
+    })
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({
+        message: "Book not found or you are not authorized to delete it.",
+      });
+    }
+
+    //getting an error?  uncomment it. and check
+    // res.status(200).json({
+    //   success: true,
+    //   message: "Book deleted successfully!",
+    // });
+    res.status(200).json(result);
+
+  } catch (error) {
+    console.error("Delete book error:", error);
+
+    res.status(500).json({
+      message: "Failed to delete book.",
+    });
+
+  }
+})
+
+
 app.get("/", (req, res) => {
   res.send({ message: "Server is running fine!" });
 });
