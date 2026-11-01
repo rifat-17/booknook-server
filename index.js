@@ -204,7 +204,7 @@ app.patch("/books/:id", verifyToken, async (req, res) => {
     const { id } = req.params;
     const userId = req.user.sub;
 
-    const { title, author, category, description, imageUrl } = req.body;
+    const { title, author, category, description, imageUrl, totalCopies } = req.body;
 
     // Validate book ID
     if (!ObjectId.isValid(id)) {
@@ -213,6 +213,11 @@ app.patch("/books/:id", verifyToken, async (req, res) => {
       });
     }
 
+    if (!Number.isInteger(totalCopies) || totalCopies < 1) {
+      return res.status(400).json({
+        message: "Total copies must be at least 1.",
+      });
+    }
     // Validate required fields
     if (
       !title?.trim() ||
@@ -239,7 +244,9 @@ app.patch("/books/:id", verifyToken, async (req, res) => {
           category,
           description: description.trim(),
           imageUrl: imageUrl.trim(),
+          totalCopies,
           updatedAt: new Date(),
+          
 
         },
       }
@@ -482,18 +489,18 @@ app.delete("/borrows/:id", verifyToken, async (req, res) => {
     }
 
     // Increase available copies
-     const inventoryResult = await booksCollection.updateOne(
+    const inventoryResult = await booksCollection.updateOne(
       {
         _id: new ObjectId(borrow.bookId),
       },
       {
-        _$inc: {
+        $inc: {
           totalCopies: 1,
         },
       }
-     );
+    );
 
-     if (inventoryResult.matchedCount === 0) {
+    if (inventoryResult.matchedCount === 0) {
       console.error("Book not found while restoring inventory:", borrow.bookId);
 
       return res.status(500).json({
@@ -501,9 +508,9 @@ app.delete("/borrows/:id", verifyToken, async (req, res) => {
       });
     }
 
-    
 
-    
+
+
     res.status(200).json({
       success: true,
       message: "Book returned successfully!",
