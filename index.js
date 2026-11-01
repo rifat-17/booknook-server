@@ -164,7 +164,7 @@ app.get("/my-books", verifyToken, async (req, res) => {
     const userId = req.user.sub;
 
     const myBooks = await booksCollection.find({
-      "addedBy,userId": userId,
+      "addedBy.userId": userId,
     }).toArray();
 
     res.status(200).json(myBooks);
