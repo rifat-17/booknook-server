@@ -141,6 +141,28 @@ app.get("/books", async (req, res) => {
 })
 
 
+// Get latest 6 books
+app.get("/latest-books", async (req, res) => {
+  try {
+    const latestBooks = await booksCollection
+      .find()
+      .sort({ createdAt: -1 })
+      .limit(6)
+      .toArray();
+
+    res.status(200).json(latestBooks);
+
+  } catch {
+    console.error("Error fetching latest books:", error);
+
+    res.status(500).json({
+      message: "Failed to fetch latest books.",
+    });
+
+  }
+});
+
+
 //book details (private)
 app.get("/books/:id", verifyToken, async (req, res) => {
   try {
@@ -246,7 +268,7 @@ app.patch("/books/:id", verifyToken, async (req, res) => {
           imageUrl: imageUrl.trim(),
           totalCopies,
           updatedAt: new Date(),
-          
+
 
         },
       }
