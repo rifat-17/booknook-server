@@ -29,6 +29,18 @@ const db = mongoClient.db("booknook");
 const booksCollection = db.collection("books");
 const borrowsCollection = db.collection("borrows");
 
+// Prevent a user from borrowing the same book more than once
+await borrowsCollection.createIndex(
+  {
+    bookId: 1,
+    userId: 1,
+  },
+  {
+    unique: true,
+  }
+);
+
+
 
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -60,17 +72,19 @@ const verifyToken = async (req, res, next) => {
 // add-book (private)
 app.post("/add-book", verifyToken, async (req, res) => {
   try {
-    const { title, author, category, description, imageUrl } = req.body;
+    const { title, author, category, description, imageUrl, totalCopies } = req.body;
 
     if (
       !title?.trim() ||
       !author?.trim() ||
       !category ||
       !description?.trim() ||
-      !imageUrl?.trim()
+      !imageUrl?.trim() ||
+      !Number.isInteger(totalCopies) ||
+      totalCopies < 1
     ) {
       return res.status(400).json({
-        message: "All book fields are required.",
+        message: "All fields are required and total copies must be at least 1.",
       });
     }
 
@@ -80,6 +94,7 @@ app.post("/add-book", verifyToken, async (req, res) => {
       category,
       description: description.trim(),
       imageUrl: imageUrl.trim(),
+      totalCopies,
       addedBy: {
         userId: req.user.sub,
         name: req.user.name || "BookNook Member",
@@ -95,6 +110,8 @@ app.post("/add-book", verifyToken, async (req, res) => {
     }
 
     const result = await booksCollection.insertOne(newBook);
+
+
 
     res.status(201).json({
       success: true,
@@ -296,19 +313,19 @@ app.delete("/books/:id", verifyToken, async (req, res) => {
 
 // Borrow a book
 app.post("/borrows", verifyToken, async (req, res) => {
+  let reservedBookId = null;
+
   try {
     const { bookId } = req.body;
+    const userId = req.user.sub;
+    const userEmail = req.user.email;
 
-    // 1. Validate book ID
+    // Validate book ID
     if (!bookId || !ObjectId.isValid(bookId)) {
       return res.status(400).json({
         message: "Invalid book ID.",
       });
     }
-
-    // 2. Get authenticated user information
-    const userId = req.user.sub;
-    const userEmail = req.user.email;
 
     if (!userId || !userEmail) {
       return res.status(401).json({
@@ -316,22 +333,10 @@ app.post("/borrows", verifyToken, async (req, res) => {
       });
     }
 
-    // 3. Find the requested book
-    const book = await booksCollection.findOne({
-      _id: new ObjectId(bookId),
-    });
-
-    if (!book) {
-      return res.status(404).json({
-        message: "Book not found.",
-      });
-    }
-
-    // 4. Prevent borrowing the same book twice while it is still borrowed
+    // Check whether user already borrowed this book
     const existingBorrow = await borrowsCollection.findOne({
-      bookId: book._id.toString(),
+      bookId,
       userId,
-      status: "borrowed",
     });
 
     if (existingBorrow) {
@@ -340,13 +345,49 @@ app.post("/borrows", verifyToken, async (req, res) => {
       });
     }
 
-    // 5. Calculate borrowing and return dates
+    // Atomically decrease available copies
+    const inventoryResult = await booksCollection.updateOne(
+      {
+        _id: new ObjectId(bookId),
+        totalCopies: { $gt: 0 },
+      },
+      {
+        $inc: {
+          totalCopies: -1,
+        },
+      }
+    );
+
+    if (inventoryResult.matchedCount === 0) {
+      const book = await booksCollection.findOne({
+        _id: new ObjectId(bookId),
+      });
+
+      if (!book) {
+        return res.status(404).json({
+          message: "Book not found.",
+        });
+      }
+
+      return res.status(409).json({
+        message: "This book is currently not available.",
+      });
+    }
+
+    reservedBookId = new ObjectId(bookId);
+
+    // Get book information
+    const book = await booksCollection.findOne({
+      _id: reservedBookId,
+    });
+
+    // Calculate 14-day borrowing period
     const borrowDate = new Date();
     const returnDate = new Date(borrowDate);
 
     returnDate.setDate(returnDate.getDate() + 14);
 
-    // 6. Create borrow document
+    // Create borrow record
     const borrowRecord = {
       bookId: book._id.toString(),
       bookTitle: book.title,
@@ -355,26 +396,34 @@ app.post("/borrows", verifyToken, async (req, res) => {
       userEmail,
       borrowDate,
       returnDate,
-      status: "borrowed",
     };
 
-    // 7. Save to MongoDB
+    // Save borrow record to mongoDB
     const result = await borrowsCollection.insertOne(borrowRecord);
-    // if error uncomment it
-    // res.status(201).json({
-    //   success: true,
-    //   message: "Book borrowed successfully!",
-    //   borrowId: result.insertedId,
-    // });
+
+    reservedBookId = null;
 
     res.status(201).json({
+      success: true,
+      message: "Book borrowed successfully!",
       borrowId: result.insertedId,
     });
-
-
-
-  } catch {
+  } catch (error) {
     console.error("Borrow book error:", error);
+
+    // Restore inventory if saving the borrow record failed
+    if (reservedBookId) {
+      await booksCollection.updateOne(
+        { _id: reservedBookId },
+        { $inc: { totalCopies: 1 } }
+      );
+    }
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "You have already borrowed this book.",
+      });
+    }
 
     res.status(500).json({
       message: "Failed to borrow book.",
@@ -421,18 +470,40 @@ app.delete("/borrows/:id", verifyToken, async (req, res) => {
     }
 
     // Delete only this user's borrowing record
-    const result = await borrowsCollection.deleteOne({
+    const borrow = await borrowsCollection.findOneAndDelete({
       _id: new ObjectId(id),
       userId,
     });
 
-    if (result.deletedCount === 0) {
+    if (!borrow) {
       return res.status(404).json({
         message: "Borrow record not found or unauthorized.",
       });
     }
 
-    // if error uncomment it
+    // Increase available copies
+     const inventoryResult = await booksCollection.updateOne(
+      {
+        _id: new ObjectId(borrow.bookId),
+      },
+      {
+        _$inc: {
+          totalCopies: 1,
+        },
+      }
+     );
+
+     if (inventoryResult.matchedCount === 0) {
+      console.error("Book not found while restoring inventory:", borrow.bookId);
+
+      return res.status(500).json({
+        message: "Borrow record was deleted, but inventory could not be restored.",
+      });
+    }
+
+    
+
+    
     res.status(200).json({
       success: true,
       message: "Book returned successfully!",
