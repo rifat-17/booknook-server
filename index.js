@@ -27,6 +27,7 @@ app.use(express.json());
 const mongoClient = await connectToMongoDB();
 const db = mongoClient.db("booknook");
 const booksCollection = db.collection("books");
+const borrowsCollection = db.collection("borrows");
 
 
 const verifyToken = async (req, res, next) => {
@@ -257,7 +258,7 @@ app.delete("/books/:id", verifyToken, async (req, res) => {
     const { id } = req.params;
     const userId = req.user.sub;
 
-     // Validate book ID
+    // Validate book ID
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         message: "Invalid book ID.",
@@ -292,6 +293,162 @@ app.delete("/books/:id", verifyToken, async (req, res) => {
   }
 })
 
+
+// Borrow a book
+app.post("/borrows", verifyToken, async (req, res) => {
+  try {
+    const { bookId } = req.body;
+
+    // 1. Validate book ID
+    if (!bookId || !ObjectId.isValid(bookId)) {
+      return res.status(400).json({
+        message: "Invalid book ID.",
+      });
+    }
+
+    // 2. Get authenticated user information
+    const userId = req.user.sub;
+    const userEmail = req.user.email;
+
+    if (!userId || !userEmail) {
+      return res.status(401).json({
+        message: "User information is missing from token.",
+      });
+    }
+
+    // 3. Find the requested book
+    const book = await booksCollection.findOne({
+      _id: new ObjectId(bookId),
+    });
+
+    if (!book) {
+      return res.status(404).json({
+        message: "Book not found.",
+      });
+    }
+
+    // 4. Prevent borrowing the same book twice while it is still borrowed
+    const existingBorrow = await borrowsCollection.findOne({
+      bookId: book._id.toString(),
+      userId,
+      status: "borrowed",
+    });
+
+    if (existingBorrow) {
+      return res.status(409).json({
+        message: "You have already borrowed this book.",
+      });
+    }
+
+    // 5. Calculate borrowing and return dates
+    const borrowDate = new Date();
+    const returnDate = new Date(borrowDate);
+
+    returnDate.setDate(returnDate.getDate() + 14);
+
+    // 6. Create borrow document
+    const borrowRecord = {
+      bookId: book._id.toString(),
+      bookTitle: book.title,
+      bookImage: book.imageUrl,
+      userId,
+      userEmail,
+      borrowDate,
+      returnDate,
+      status: "borrowed",
+    };
+
+    // 7. Save to MongoDB
+    const result = await borrowsCollection.insertOne(borrowRecord);
+    // if error uncomment it
+    // res.status(201).json({
+    //   success: true,
+    //   message: "Book borrowed successfully!",
+    //   borrowId: result.insertedId,
+    // });
+
+    res.status(201).json({
+      borrowId: result.insertedId,
+    });
+
+
+
+  } catch {
+    console.error("Borrow book error:", error);
+
+    res.status(500).json({
+      message: "Failed to borrow book.",
+    });
+  }
+});
+
+
+// Get logged-in user's borrowed books
+app.get("/my-borrows", verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.sub;
+
+    const myBorrows = await borrowsCollection
+      .find({ userId })
+      .sort({ borrowDate: -1 })
+      .toArray();
+
+    res.status(200).json(myBorrows);
+
+
+  } catch (error) {
+    console.error("Error fetching my borrows:", error);
+
+    res.status(500).json({
+      message: "Failed to fetch your borrowed books.",
+    });
+
+  }
+})
+
+
+// Return a borrowed book
+app.delete("/borrows/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.sub;
+
+    // Validate borrow ID
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        message: "Invalid borrow ID.",
+      });
+    }
+
+    // Delete only this user's borrowing record
+    const result = await borrowsCollection.deleteOne({
+      _id: new ObjectId(id),
+      userId,
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({
+        message: "Borrow record not found or unauthorized.",
+      });
+    }
+
+    // if error uncomment it
+    res.status(200).json({
+      success: true,
+      message: "Book returned successfully!",
+    });
+
+
+  } catch (error) {
+    console.error("Return book error:", error);
+
+    res.status(500).json({
+      message: "Failed to return book.",
+    });
+
+  }
+
+})
 
 app.get("/", (req, res) => {
   res.send({ message: "Server is running fine!" });
