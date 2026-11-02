@@ -152,7 +152,7 @@ app.get("/latest-books", async (req, res) => {
 
     res.status(200).json(latestBooks);
 
-  } catch {
+  } catch (error) {
     console.error("Error fetching latest books:", error);
 
     res.status(500).json({
